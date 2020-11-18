@@ -1,0 +1,1923 @@
+#from jsonschema.compat import urlopen
+import math
+import string
+import os
+import sys
+import quandl
+import pandas as pd
+
+#import matplotlib.pyplot as plt
+import numpy
+import keras
+#from jsonschema.compat import urlopen
+from keras import Model
+from keras.layers import Dense
+from keras.layers import LSTM
+from keras.layers.advanced_activations import LeakyReLU
+from keras.models import Sequential
+from keras.models import model_from_json
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import MinMaxScaler
+
+from keras.layers import Dense, Input
+import tensorflow as tf
+
+import os
+from os.path import dirname, join
+
+import os
+from os.path import dirname, join
+# YOU MUST INSTALL KERAS in the Virtual Environment to do this!!!!
+
+# convert an array of values into a dataset matrix
+# From How to Predict Stock Prices Easily --Google
+# New Prediction model link
+# https://github.com/Rajat-dhyani/Stock-Price-Predictor/blob/master/Stock_Price_Predictor.ipynb
+# Try LSTM for Regression with Time Steps!!!!!
+# https://machinelearningmastery.com/time-series-prediction-lstm-recurrent-neural-networks-python-keras/
+from tensorflow.python.layers.core import dense
+#from user_agent import generate_user_agent
+
+##/home/development/AndroidStudioProjects/ChaquopyAttempt1/app/replacement/dir/mod.py
+
+def LSTM_model_10A(numEpochs, stockName, look_back, FunctionalAPI):
+    """
+    Creates multivalue time series with price and volume
+    Parameters:
+        numEpochs;integer
+        stockName:string
+        look_back:integer
+        FuncitonalAPI:boolean
+    """
+    # 12/8/19 Use this instead for time series: BRZY84UZ9H66SK72
+    # https://www.alphavantage.co/query?function=TIME_SERIES_MONTHLY&symbol=TCNB&apikey=BRZY84UZ9H66SK72&datatype=csv
+    # https://www.alphavantage.co/documentation/#time-series-data
+    # NEW alphaVantage Python API : https://alpha-vantage.readthedocs.io/en/latest/
+    # https://rapidapi.com/patrick.collins/api/alpha-vantage
+
+    numpy.random.seed(7)
+
+    quandl.ApiConfig.api_key = "6X-hxfxiPcSb3uTS2UyB"
+    # df = quandl.get("WIKI/KR")
+    # df = quandl.get("EOD/MSFT")
+    # df = quandl.get("SHARADAR/SEP",ticker="DDS")
+    df = quandl.get(stockName)
+    # START HERE and include Volume! 8/24/19
+    # ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividend', 'Split', 'Adj_Open', 'Adj_High', 'Adj_Low', 'Adj_Close', 'Adj_Volume']
+    #print(df.tail(4))
+
+    #for index, row in df.head().iterrows():
+    #    print(index, row['Open'], row['High'], row['Adj_Close'])  # HERE
+
+    # New code 9/21/2019
+    dataframeAdj_Close = df[['Adj_Close', 'Volume']]
+    dataframePriceOnly = df[['Adj_Close']]
+    Debug = False
+
+    # This actually splits upa nd creates your
+    # Independent and Dependent Variables
+    # But it's complicated and you need to get back to it.
+    # look_back = 3
+    def makeTimeSeries(dataset, look_back, factor1, factor2):
+        #print("begin makeTimeSeries")
+        # IN: dataset=  [[Price1,Volume1]..[PriceN,VolumeN]]
+        # Checked comes in price and volume viz:
+        # [[3.1752134e-05 6.0479403e-03]
+        idx = 0
+        l = 0
+        #print("***********")
+        #print("* Price,Volume *")
+        #print("***********")
+        # dataX, dataY = [[],[]], [[],[]]
+        dataX, dataXInter, dataY = [], [], []
+        aSuperList = []
+        aIntermediateList = []
+        for i in range(len(dataset) - look_back):  # -1
+            a1 = []
+            a2 = []
+            for timeSteps in range(look_back):
+                a1 = dataset[
+                    i + timeSteps, 0]  # 5 or 6? element slice... Stops at (len-1)th element e.g. if i=0 and look_back=6 so 5th element    goes from (len-k-1 to len -1)_ and e.g. a[1:2],a[2:3],a[3:4]  goes from
+                a2 = dataset[
+                    i + timeSteps, 1]  # 5 or 6? element slice... Stops at (len-1) e.g. if i=0 and look_back=6 so 5th element   goes from (len-k-1 to len -1)_ and e.g. a[1:2],a[2:3],a[3:4]  goes from
+                #            a1 = dataset[i:(i + look_back),0]  # 5 or 6? element slice... Stops at (len-1)th element e.g. if i=0 and look_back=6 so 5th element    goes from (len-k-1 to len -1)_ and e.g. a[1:2],a[2:3],a[3:4]  goes from
+                #            a2 = dataset[i:(i + look_back),1] # 5 or 6? element slice... Stops at (len-1) e.g. if i=0 and look_back=6 so 5th element   goes from (len-k-1 to len -1)_ and e.g. a[1:2],a[2:3],a[3:4]  goes from
+                dataX.clear()
+                dataX.append(a1 * factor1)  # Price 1 elements
+                dataX.append(a2 * factor2)  # Volume 1 elements
+                dataXInter.append(list(dataX))
+            b1 = []
+            b2 = []
+            b1 = numpy.float32(
+                dataset[i + look_back, 0]) * factor1  # Y=(i+look_back)th element e.g. i=0, look_back=6 so 6th element
+            b2 = numpy.float32(
+                dataset[i + look_back, 1]) * factor2
+            dataY.append(b1)  # Y=Price
+            aIntermediateList.append(dataXInter.copy())
+            dataXInter.clear()
+        #print("Superlist={}".format(numpy.array(aIntermediateList).shape))
+        #print("Datay={}".format(numpy.array(dataY).shape))
+        #print(aIntermediateList[0:6])
+        # OUT:  dataX: [[[Price1,Volume1]...[Price6],[Volume6]]...[[Price,Volume1]...[Price6,Volume6]]]
+        # dataX Shape:(5,000,6,2)
+        # in Fact if we follow Jason Brownlee at this url:
+        # https://machinelearningmastery.com/multivariate-time-series-forecasting-lstms-keras/
+        return numpy.array(aIntermediateList), numpy.array(dataY)
+
+    numpy.random.seed(7)
+    # dataframeAdj_Close = dffinalAdj_Close
+    # dataframeVolume=dffinalVolume
+    #print("*********************************\n")
+    #print("Tail Values: \n", dataframeAdj_Close.tail(4))
+    #print("*********************************\n")
+    datasetPrice = dataframeAdj_Close.values
+    datasetPrice = datasetPrice.astype('float32')
+    datasetPriceOnly = dataframePriceOnly.values
+    datasetPriceOnly = dataframePriceOnly.astype('float32')
+    if FunctionalAPI == True:
+        datasetVolume = dataframeVolume.values
+        datasetVolume = datasetVolume.astype('float32')
+    # normalize the datasetPrice
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    # FIT_TRANSFORM CLEANS UP THE NULLS!!!
+    # AND NORMALIZES!!!!
+    # Error expected 2D error got 1D array
+    Debug = True
+    datasetPrice = scaler.fit_transform(datasetPrice)
+    datasetPriceOnly = scaler.fit_transform(datasetPriceOnly)
+    if FunctionalAPI == True:
+        datasetVolume = scaler.fit_transform(datasetVolume)
+    # split into train and test sets
+    train_size = int(len(datasetPrice) * 0.67)
+    test_size = len(datasetPrice) - train_size
+    if FunctionalAPI == True:
+        train_sizeVolume = int(len(datasetVolume) * 0.67)
+        test_sizeVolume = len(datasetVolume) - train_sizeVolume  # train and test are both 2 Dimensional Arrays
+    # Break 67% into train and the rest of it into test
+    # train gets both price and volume here!!
+    train, test = datasetPrice[0:train_size, :], datasetPrice[train_size:len(datasetPrice),
+                                                 :]  # 2 - 2 Dimensional Arrays
+    if FunctionalAPI == True:
+        trainVolume, testVolume = datasetVolume[0:train_sizeVolume, :], datasetVolume[
+                                                                        train_sizeVolume:len(datasetVolume),
+                                                                        :]  # 2 - 2 Dimensional Arrays
+
+    factor1 = 1;
+    factor2 = .34
+    trainX, trainY = makeTimeSeries(train, look_back, factor1, factor2)
+    #print(scaler.inverse_transform(numpy.array(trainY).reshape(-1, 1)[-10:]))
+    if FunctionalAPI == True:
+        trainXVolume, trainYVolume = makeTimeSeries(trainVolume, look_back, factor1, factor2)
+    trainX, trainY = makeTimeSeries(train, look_back, factor1, factor2)
+    testX, testY = makeTimeSeries(test, look_back, factor1, factor2)
+    if FunctionalAPI == True:
+        testXVolume, testYVolume = makeTimeSeries(testVolume, look_back, factor1, factor2)
+    Debug = False
+    if Debug == True:
+        print("trainX", trainX)
+        print("trainY", trainY)
+        print("Shape", trainX.shape)
+        print("Shape", testX.shape)
+    oldtestX = testX
+    trainX = numpy.reshape(trainX, (trainX.shape[0], trainX.shape[1], trainX.shape[2]))
+    testX = numpy.reshape(testX, (testX.shape[0], testX.shape[1], testX.shape[2]))
+
+    if FunctionalAPI == True:
+        trainXVolume = numpy.reshape(trainXVolume,
+                                     (trainXVolume.shape[0], trainXVolume.shape[1], trainXVolume.shape[2]))
+        testXVolume = numpy.reshape(testXVolume, (testXVolume.shape[0], testXVolume.shape[1], testXVolume.shape[2]))
+    if Debug == True:
+        print("**********CHECKING LAST 2 VALUES IN DATASET****************")
+        # YES WE DO GET TO THE LAST 2 VALUES IN THE DATASET!!!!!!!!!!!
+        print("New TrainX=", scaler.inverse_transform(numpy.reshape(trainX[-1:], (1, -1))))
+        print("New TrainX Shape=", trainX.shape)
+        print("New TestX=", scaler.inverse_transform(numpy.reshape(testX[-1:], (1, -1))))
+        print("New TestX Shape=", testX.shape)
+        print("New TestY=", scaler.inverse_transform(numpy.reshape(testY[-1:], (1, -1))))
+        print("New TestY Shape=", testY.shape)
+        print("***********************************************************")
+        print("New Test last value=", scaler.inverse_transform(numpy.reshape(test[-1:], (1, -1))))
+        print("dataset last value={}".format(
+            scaler.inverse_transform(numpy.reshape(datasetPrice[len(datasetPrice) - 1], (1, -1)))))
+
+    score = 0
+    # http://www.itdaan.com/blog/2017/11/09/c2525310531416583200a3e14fbb8965.html
+    if FunctionalAPI == True:
+        # ***************************************************************
+        # Beginning of Will Teslers Code
+
+        import keras as ks
+        # No activation functions for Input Layer
+        price = Input(shape=(look_back, 1), name='price')
+        volume = Input(shape=(look_back, 1), name='volume')
+        HiddenSize = (look_back + 1) * 2
+        priceLayers = [[0]]
+        volumeLayers = [[0]]
+        # priceLayers = LSTM(64, return_sequences=False)(price)
+        # volumeLayers = LSTM(64, return_sequences=False)(volume)
+        # tanh for hidden layer
+        priceLayers = LSTM(HiddenSize, return_sequences=False, activation='tanh')(price)
+        volumeLayers = LSTM(HiddenSize, return_sequences=False, activation='tanh')(volume)
+        # ks.layers.LeakyReLU(alpha=0.3)
+        output = ks.layers.Concatenate(axis=-1)([priceLayers, volumeLayers, ])
+        # output = ks.layers.Concatenate([priceLayers, volumeLayers, ])
+        # Dense is just a nn layer (usually and here for output)
+        # Runs but may need Dense(1 to be Dense(look_back
+        # Start here 8/11/2019
+        output = Dense(1, name='weightedAverage_output', activation='relu')(output)
+        model1 = Model(inputs=[price, volume], outputs=[output])
+        # model1.compile(optimizer='rmsprop', loss ='mse')
+        model1.compile(loss='mean_squared_error', optimizer='adam')
+        # Beginning of my mod
+        # Load Model with Data
+        # https://machinelearningmastery.com/keras-functional-api-deep-learning/
+
+        # Start Here change [trainX,trainX] to [trainX,trainXVolume] 8/26/2019
+
+        model1.fit([trainX, trainXVolume], trainY, epochs=numEpochs, batch_size=1, verbose=2)
+        score = model1.evaluate([trainX, trainXVolume], trainY, verbose=0)
+        # exit(0)
+        # End of Will Teslers Code
+    else:
+        # **************************************************************
+        # Old Sequential model Begin
+        # 1.) Create Model
+        # https://machinelearningmastery.com/stacked-long-short-term-memory-networks/
+        # https: // www.researchgate.net / publication / 236164660_Optimal_Neural_Network_Architecture_for_Stock_Market_Forecasting
+        model = tensorflow.keras.Sequential()
+        HiddenSize = (look_back + 1) * 2
+        # Original model.add(LSTM(HiddenSize, activation='tanh', input_shape=(look_back, 1)))
+        # 11/3/2019 This in put shape should be (look_back,2)
+        model.add(LSTM(HiddenSize, activation='tanh', input_shape=(look_back, 2), return_sequences=True))
+        model.add(LSTM(math.ceil(HiddenSize * .5), activation='tanh',
+                       return_sequences=True))  # Last layer does not need return_sequences
+        model.add(LSTM(math.ceil(HiddenSize * .1), activation='tanh', return_sequences=False))
+        model.add(Dense(1))
+        model.add(LeakyReLU(alpha=.001))
+        # model.add(Dense(1, input_dim=1, activation='relu'))
+        model.compile(loss='mean_squared_error', optimizer='adam')
+        # https://stackoverflow.com/questions/22981845/3-dimensional-array-in-numpy
+
+        # Fit on trainX, trainY
+        model.fit(testX, testY, epochs=numEpochs, batch_size=1, verbose=2)
+        score = model.evaluate(trainX, trainY, verbose=0)
+        # Evaluate Description: https://stackoverflow.com/questions/51299836/what-values-are-returned-from-model-evaluate-in-keras
+        #print("2.) Old Sequential model end")
+        #print("# **********************************************************************")
+
+    #print("Evaluation score=?")
+    #print(model.metrics_names)
+    #print(score)
+    if FunctionalAPI == True:
+        trainPredict = model1.predict([trainX, trainXVolume])
+    else:
+        trainPredict = model.predict(trainX)
+    # TrainPredict(although just price) is created from the model in both price and volume (from trainX) above
+
+    # Scale this!!!!!!!!!!!!!!! it isn't scaled!!!!!!!!
+    # exit(0)
+
+    #print("trainPredict prior=", trainPredict)
+    if FunctionalAPI == True:
+        testPredict = model1.predict([testX, testXVolume])
+    else:
+        testPredict = model.predict(testX)  # testX #n,6,2 testPredict n,1
+    # Transform back to ORIGINAL UNSCALED data
+    # You Are here 8/26/2019
+    Debug = False
+    if Debug == True:
+        print("----testX------151--")
+        # see if this shape is n,6,2? for testX
+        print("testX Shape={}".format(testX.shape))
+        print("Shows final 6,2 vector of testX and reshapes")
+        print(scaler.inverse_transform(testX[-1:].reshape(-1, 1)))
+        print("-----testPredict--129-----")
+        print("Shows final price of testPredict")
+        print(scaler.inverse_transform(testPredict[-1:].reshape(-1, 1)))
+        print(numpy.array(testPredict).shape)
+        print("Shows all of testPredict")
+        print(scaler.inverse_transform(testPredict[:].reshape(-1, 1)))
+        print("IN conclusion price and volume went in and Price only came out")
+        # 12/16/2019
+        # exit(0)
+        print("----trainX--------")
+        print(scaler.inverse_transform(trainX[:-1].reshape(-1, 1)))
+        print("----trainPredict--------")
+        print(scaler.inverse_transform(trainPredict[:-1].reshape(-1, 1)))
+        print(numpy.array(trainPredict).shape)
+        # exit(0)
+    trainPredict = scaler.inverse_transform(trainPredict)
+    trainY1 = scaler.inverse_transform([trainY])
+    testY1 = scaler.inverse_transform([testY])
+    if Debug == True:
+        print("trainPredict={}".format(numpy.array(trainPredict.shape)))
+        print("trainPredict after=", trainPredict)
+        print(numpy.array(testY1).shape)
+        print(testY1)
+        print("----------")
+        print("testX")
+        print(oldtestX[:-2])
+        print("-----------")
+        print(oldtestX[:2])
+    testPredict = scaler.inverse_transform(testPredict)
+    #print("testPredict after=", testPredict)
+    #print("shape testPredict", testPredict.shape)
+    # 11/23/2019 This is fine it outputs a nX1 array unlike what's in load_5A
+    # 11/17/2019 You are here testY1 is good makeTimeSeries is good
+    # but testPredict is bad and so is your plotting so fix them now
+    # exit(0)
+    # calculate root mean squared error of trainPredict and testPredict Models
+    # Shape of trainPredict [2355,1] and testPredict [1159,1]  2D Arrays at this point
+    Debug = False
+    if Debug == True:
+        print("data train Predict", trainPredict)
+        print("shape trainPredict", trainPredict.shape)
+        print("data test Predict", testPredict)
+        print("shape testPredict", testPredict.shape)
+        # print("shape trainY1", trainY1.shape)
+        # print("data trainY1", trainY1)
+    trainScore = math.sqrt(mean_squared_error(trainY1[0], trainPredict[:, 0]))
+    #print('Train Score: %.2f RMSE' % (trainScore))
+    testScore = math.sqrt(mean_squared_error(testY1[0], testPredict[:, 0]))
+    #print('Test Score: %.2f RMSE' % (testScore))
+    # from sklearn.metrics import accuracy_scoreaccuracy_score(df.actual_label.values, df.predicted_RF.values)
+    # https://towardsdatascience.com/understanding-data-science-classification-metrics-in-scikit-learn-in-python-3bc336865019
+    # shift train predictions for plotting
+    # Returns a same Shape array as given array
+    ##You are here 8/26/2019-----------------------------------------------
+    trainPredictPlot = numpy.empty_like(datasetPrice)
+    trainPredictPlot[:, :] = numpy.nan
+    testPredictPlot = numpy.empty_like(datasetPrice)
+    testPredictPlot[:, :] = numpy.nan
+    #  model 2D = 2D arrays
+    trainPredictPlot[look_back:len(trainPredict) + look_back, :] = trainPredict
+    testPredictPlot[len(trainPredict) + (look_back * 2) + 1:len(datasetPrice) - 1, :] = testPredict[
+                                                                                        0:len(trainPredict) + (
+                                                                                                look_back * 2) + 1:len(
+                                                                                            datasetPrice) - 1]  # testPredict[0:2798]
+    #print("Completed testPredictPlot")
+    testPredictPlot = numpy.empty_like(datasetPrice)
+    testPredictPlot[:, :] = numpy.nan
+    testPredictPlot[len(trainPredict) + (look_back * 2) + 1:len(datasetPrice) - 1, :] = testPredict[
+                                                                                        0:len(trainPredict) + (
+                                                                                                look_back * 2) + 1:len(
+                                                                                            datasetPrice) - 1]  # testPredict[0:2798]
+    # https://machinelearningmastery.com/multivariate-time-series-forecasting-lstms-keras/
+    # *********************************
+    # Part 2 Write the model to disk *
+    # serialize model to JSON        *
+    # *********************************
+
+    # Changed 9/3/2019
+    # if FunctionalAPI == True:
+    #    model_json = model1.to_json()
+    # else:
+    #    testPredict = model.predict(testX)
+
+    # PROBLEM HERE 9/3/2019!!!!!!!!!!!!!!
+    if FunctionalAPI == True:
+        model_json = model1.to_json()
+    else:
+        model_json = model.to_json()
+
+    with open("model.json", "w") as json_file:
+        json_file.write(model_json)
+    # serialize weights to HDF5
+    if FunctionalAPI == True:
+        model1.save_weights("model.h5")
+    else:
+        model.save_weights("model.h5")
+    #print("Saved model to disk")
+    # load json and create model
+    json_file = open('model.json', 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    loaded_model = keras.models.model_from_json(loaded_model_json)
+    # load weights into new model
+    loaded_model.load_weights("model.h5")
+    #print("Loaded model from disk")
+    # evaluate loaded model on test data
+    # loaded_model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+    loaded_model.compile(loss='mean_squared_error', optimizer='adam')
+    #    score = loaded_model.predict(trainX, trainY, verbose=0)
+    # print("%s: %.2f%%" % (loaded_model.metrics_names[1], score[1] * 100))
+    return (0)
+
+
+def LSTM_model_10AMobile(numEpochs, stockName, look_back, FunctionalAPI):
+    """
+    Creates multivalue time series with price and volume
+    Parameters:
+        numEpochs;integer
+        stockName:string
+        look_back:integer
+        FuncitonalAPI:boolean
+    """
+    print("*************START*******************")
+    numpy.random.seed(7)
+    quandl.ApiConfig.api_key = "6X-hxfxiPcSb3uTS2UyB"
+    df = quandl.get(stockName)
+    dataframeAdj_Close = df[['Adj_Close', 'Volume']]
+    dataframePriceOnly = df[['Adj_Close']]
+    Debug = True
+    # This actually splits upa nd creates your
+    # Independent and Dependent Variables
+    # But it's complicated and you need to get back to it.
+    # look_back = 3
+    def makeTimeSeries(dataset, look_back, factor1, factor2):
+        idx = 0
+        l = 0
+
+        dataX, dataXInter, dataY = [], [], []
+        aSuperList = []
+        aIntermediateList = []
+        for i in range(len(dataset) - look_back):  # -1
+            a1 = []
+            a2 = []
+            for timeSteps in range(look_back):
+                a1 = dataset[
+                    i + timeSteps, 0]  # 5 or 6? element slice... Stops at (len-1)th element e.g. if i=0 and look_back=6 so 5th element    goes from (len-k-1 to len -1)_ and e.g. a[1:2],a[2:3],a[3:4]  goes from
+                a2 = dataset[
+                    i + timeSteps, 1]  # 5 or 6? element slice... Stops at (len-1) e.g. if i=0 and look_back=6 so 5th element   goes from (len-k-1 to len -1)_ and e.g. a[1:2],a[2:3],a[3:4]  goes from
+                #            a1 = dataset[i:(i + look_back),0]  # 5 or 6? element slice... Stops at (len-1)th element e.g. if i=0 and look_back=6 so 5th element    goes from (len-k-1 to len -1)_ and e.g. a[1:2],a[2:3],a[3:4]  goes from
+                #            a2 = dataset[i:(i + look_back),1] # 5 or 6? element slice... Stops at (len-1) e.g. if i=0 and look_back=6 so 5th element   goes from (len-k-1 to len -1)_ and e.g. a[1:2],a[2:3],a[3:4]  goes from
+                dataX.clear()
+                dataX.append(a1 * factor1)  # Price 1 elements
+                dataX.append(a2 * factor2)  # Volume 1 elements
+                dataXInter.append(list(dataX))
+            b1 = []
+            b2 = []
+            b1 = numpy.float32(
+                dataset[i + look_back, 0]) * factor1  # Y=(i+look_back)th element e.g. i=0, look_back=6 so 6th element
+            b2 = numpy.float32(
+                dataset[i + look_back, 1]) * factor2
+            dataY.append(b1)  # Y=Price
+            aIntermediateList.append(dataXInter.copy())
+            dataXInter.clear()
+        return numpy.array(aIntermediateList), numpy.array(dataY)
+
+    numpy.random.seed(7)
+    # new
+    datasetPrice = dataframeAdj_Close.values
+    datasetPrice = datasetPrice.astype('float32')
+    datasetPriceOnly = dataframePriceOnly.values
+    datasetPriceOnly = dataframePriceOnly.astype('float32')
+    # new
+    if FunctionalAPI == True:
+        datasetVolume = dataframeVolume.values
+        datasetVolume = datasetVolume.astype('float32')
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    Debug = True
+    #new
+
+    datasetPrice = scaler.fit_transform(datasetPrice)
+    datasetPriceOnly = scaler.fit_transform(datasetPriceOnly)
+    if FunctionalAPI == True:
+        datasetVolume = scaler.fit_transform(datasetVolume)
+    # split into train and test sets
+    train_size = int(len(datasetPrice) * 0.67)
+    test_size = len(datasetPrice) - train_size
+    if FunctionalAPI == True:
+        train_sizeVolume = int(len(datasetVolume) * 0.67)
+        test_sizeVolume = len(datasetVolume) - train_sizeVolume  # train and test are both 2 Dimensional Arrays
+    #new
+    # Break 67% into train and the rest of it into test
+    # train gets both price and volume here!!
+    train, test = datasetPrice[0:train_size, :], datasetPrice[train_size:len(datasetPrice),
+                                                 :]  # 2 - 2 Dimensional Arrays
+    if FunctionalAPI == True:
+        trainVolume, testVolume = datasetVolume[0:train_sizeVolume, :], datasetVolume[
+                                                                        train_sizeVolume:len(datasetVolume),
+                                                                        :]  # 2 - 2 Dimensional Arrays
+
+    factor1 = 1;
+    factor2 = .34
+    trainX, trainY = makeTimeSeries(train, look_back, factor1, factor2)
+    #print(scaler.inverse_transform(numpy.array(trainY).reshape(-1, 1)[-10:]))
+    if FunctionalAPI == True:
+        trainXVolume, trainYVolume = makeTimeSeries(trainVolume, look_back, factor1, factor2)
+    trainX, trainY = makeTimeSeries(train, look_back, factor1, factor2)
+    testX, testY = makeTimeSeries(test, look_back, factor1, factor2)
+    if FunctionalAPI == True:
+        testXVolume, testYVolume = makeTimeSeries(testVolume, look_back, factor1, factor2)
+    Debug = True
+    #new
+    if Debug == True:
+        print("trainX", trainX)
+        print("trainY", trainY)
+        print("Shape", trainX.shape)
+        print("Shape", testX.shape)
+    oldtestX = testX
+    trainX = numpy.reshape(trainX, (trainX.shape[0], trainX.shape[1], trainX.shape[2]))
+    testX = numpy.reshape(testX, (testX.shape[0], testX.shape[1], testX.shape[2]))
+    # new
+    if FunctionalAPI == True:
+        trainXVolume = numpy.reshape(trainXVolume,
+                                     (trainXVolume.shape[0], trainXVolume.shape[1], trainXVolume.shape[2]))
+        testXVolume = numpy.reshape(testXVolume, (testXVolume.shape[0], testXVolume.shape[1], testXVolume.shape[2]))
+    if Debug == True:
+        print("**********CHECKING LAST 2 VALUES IN DATASET****************")
+        # YES WE DO GET TO THE LAST 2 VALUES IN THE DATASET!!!!!!!!!!!
+        print("New TrainX=", scaler.inverse_transform(numpy.reshape(trainX[-1:], (1, -1))))
+        print("New TrainX Shape=", trainX.shape)
+        print("New TestX=", scaler.inverse_transform(numpy.reshape(testX[-1:], (1, -1))))
+        print("New TestX Shape=", testX.shape)
+        print("New TestY=", scaler.inverse_transform(numpy.reshape(testY[-1:], (1, -1))))
+        print("New TestY Shape=", testY.shape)
+        print("***********************************************************")
+        print("New Test last value=", scaler.inverse_transform(numpy.reshape(test[-1:], (1, -1))))
+        print("dataset last value={}".format(
+            scaler.inverse_transform(numpy.reshape(datasetPrice[len(datasetPrice) - 1], (1, -1)))))
+    #new
+    score = 0
+    # http://www.itdaan.com/blog/2017/11/09/c2525310531416583200a3e14fbb8965.html
+    print("Entering Model")
+    if FunctionalAPI == True:
+        # ***************************************************************
+        # Beginning of Will Teslers Code
+
+        import keras as ks
+        # No activation functions for Input Layer
+        price = Input(shape=(look_back, 1), name='price')
+        volume = Input(shape=(look_back, 1), name='volume')
+        HiddenSize = (look_back + 1) * 2
+        priceLayers = [[0]]
+        volumeLayers = [[0]]
+        # priceLayers = LSTM(64, return_sequences=False)(price)
+        # volumeLayers = LSTM(64, return_sequences=False)(volume)
+        # tanh for hidden layer
+        priceLayers = LSTM(HiddenSize, return_sequences=False, activation='tanh')(price)
+        volumeLayers = LSTM(HiddenSize, return_sequences=False, activation='tanh')(volume)
+        # ks.layers.LeakyReLU(alpha=0.3)
+        output = ks.layers.Concatenate(axis=-1)([priceLayers, volumeLayers, ])
+        # output = ks.layers.Concatenate([priceLayers, volumeLayers, ])
+        # Dense is just a nn layer (usually and here for output)
+        # Runs but may need Dense(1 to be Dense(look_back
+        # Start here 8/11/2019
+        output = Dense(1, name='weightedAverage_output', activation='relu')(output)
+        model1 = Model(inputs=[price, volume], outputs=[output])
+        # model1.compile(optimizer='rmsprop', loss ='mse')
+        model1.compile(loss='mean_squared_error', optimizer='adam')
+        # Beginning of my mod
+        # Load Model with Data
+        # https://machinelearningmastery.com/keras-functional-api-deep-learning/
+
+        # Start Here change [trainX,trainX] to [trainX,trainXVolume] 8/26/2019
+
+        model1.fit([trainX, trainXVolume], trainY, epochs=numEpochs, batch_size=1, verbose=2)
+        score = model1.evaluate([trainX, trainXVolume], trainY, verbose=0)
+        # exit(0)
+        # End of Will Teslers Code
+    else:
+        print("****Start model Fit 0*****")
+        #model = tensorflow.keras.Sequential()
+        model = tf.keras.Sequential()
+        HiddenSize = (look_back + 1) * 2
+        print("****Start model Fit 1*****")
+        model.add(tf.keras.layers.LSTM(HiddenSize, activation='tanh', input_shape=(look_back, 2), return_sequences=True))
+        model.add(tf.keras.layers.LSTM(math.ceil(HiddenSize * .5), activation='tanh',
+                       return_sequences=True))  # Last layer does not need return_sequences
+        print("****Start model Fit 2*****")
+        model.add(tf.keras.layers.LSTM(math.ceil(HiddenSize * .1), activation='tanh', return_sequences=False))
+        model.add(tf.keras.layers.Dense(1))
+        model.add(tf.keras.layers.LeakyReLU(alpha=.001))
+        model.compile(loss='mean_squared_error', optimizer='adam')
+        print("****Start model Fit 3*****")
+        model.fit(testX, testY, epochs=numEpochs, batch_size=1, verbose=2)
+        score = model.evaluate(trainX, trainY, verbose=0)
+        print("****End model Fit*****")
+    #new
+    #errno 38 https://aws.amazon.com/blogs/compute/parallel-processing-in-python-with-aws-lambda/
+    #https://stackoverflow.com/questions/6033599/oserror-38-errno-38-with-multiprocessing
+    #keras.experimental.terminate_keras_multiprocessing_pools(
+    #    grace_period=0.1, use_sigkill=False
+    #)
+    print("**--> Start prediction","**--> Start prediction")
+    if FunctionalAPI == True:
+        trainpredict = model1.predict([trainX, trainXVolume])
+    else:
+        #Error 38
+        trainpredict = model.predict(trainX)
+        #print("trainPredict prior=", trainPredict)
+    if FunctionalAPI == True:
+        testPredict = model1.predict([testX, testXVolume])
+    else:
+        testPredict = model.predict(testX)  # testX #n,6,2 testPredict n,1
+    # Transform back to ORIGINAL UNSCALED data
+    # You Are here 8/26/2019
+    print("Start inverse transform")
+    trainPredict = scaler.inverse_transform(trainpredict)
+    trainY1 = scaler.inverse_transform([trainY])
+    testY1 = scaler.inverse_transform([testY])
+    testPredict = scaler.inverse_transform(testPredict)
+    trainScore = math.sqrt(mean_squared_error(trainY1[0], trainPredict[:, 0]))
+    #print('Train Score: %.2f RMSE' % (trainScore))
+    testScore = math.sqrt(mean_squared_error(testY1[0], testPredict[:, 0]))
+
+    #added 6/2020
+    trainPredictPlot = numpy.empty_like(datasetPrice)
+    trainPredictPlot[:, :] = numpy.nan
+    testPredictPlot = numpy.empty_like(datasetPrice)
+    testPredictPlot[:, :] = numpy.nan
+    #  model 2D = 2D arrays
+    trainPredictPlot[look_back:len(trainPredict) + look_back, :] = trainPredict
+    testPredictPlot[len(trainPredict) + (look_back * 2) + 1:len(datasetPrice) - 1, :] = testPredict[
+                                                                                    0:len(trainPredict) + (
+                                                                                            look_back * 2) + 1:len(
+                                                                                        datasetPrice) - 1]  # testPredict[0:2798]
+
+
+    #print("Completed testPredictPlot")
+    testPredictPlot = numpy.empty_like(datasetPrice)
+    testPredictPlot[:, :] = numpy.nan
+    testPredictPlot[len(trainPredict) + (look_back * 2) + 1:len(datasetPrice) - 1, :] = testPredict[
+                                                                                        0:len(trainPredict) + (
+                                                                                                look_back * 2) + 1:len(
+                                                                                            datasetPrice) - 1]  # testPredict[0:2798]
+    #The rest or the story 6/5/2020
+
+    # https://machinelearningmastery.com/multivariate-time-series-forecasting-lstms-keras/
+    # *********************************
+    # Part 2 Write the model to disk *
+    # serialize model to JSON        *
+    # *********************************
+
+    #5/6/2020
+    #new 6/7/2020
+    if FunctionalAPI == True:
+        model_json = model1.to_json()
+    else:
+        model_json = model.to_json()
+
+    # new 6/6/2020
+    #with open("model.json", "w") as json_file:
+    #        json_file.write(model_json)
+
+    #6/12/2020
+    #new Stuff 6/12/2020
+    print("*****Write JSON")
+    import os
+    foldera = os.path.dirname(os.path.abspath(__file__))
+    filepath1 = os.path.join(foldera, 'model.json')
+    filepath2 = os.path.join(foldera, 'model.h5')
+
+    with open(filepath1, "w") as json_file:
+            json_file.write(model_json)
+    # serialize weights to HDF5
+    if FunctionalAPI == True:
+        model1.save_weights(filepath2)
+    else:
+        model.save_weights(filepath2)
+    #print("Saved model to disk")
+    # load json and create model
+
+    json_file = open(filepath1, 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    loaded_model = tf.keras.models.model_from_json(loaded_model_json)
+    # load weights into new model
+    loaded_model.load_weights(filepath2)
+    #print("Loaded model from disk")
+    # evaluate loaded model on test data
+    # loaded_model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+    loaded_model.compile(loss='mean_squared_error', optimizer='adam')
+    print("***End module")
+    return 0
+
+
+def Load_model_7A(dateListClose, dateListVolume, stockName, lookback, blocks, showOnlyGainers, FunctionalAPI,
+                  lstSelection, showGraphs):
+    """
+    Loads multivalue model
+    Parameters:
+        dateLIstClose:Dictionary/Json
+        dateListVolume:Dictioary/Json
+        stockName:String
+        lookback:integer
+        blocks:integer
+        showOnlyGainers:boolean
+        FunctionslAPI:boolean
+    """
+    # Additional Comments
+    # Stop here and put in dateListVolume 9/1/20109
+    # convert to n,6,2 or n samples,6 timesteps and 2 feature
+    # 10/24/19
+    # Desired shape for combination of dateListClose and dateListVolume is n,6,2
+    # How to combine these most efficiently?
+    # Price (36,) Volume (36,)
+    # The short answer is
+    # n,6,2 or 6,6,2 for a total of 72(36+36)
+    # n,6,(Price,Volume)
+    # https://www.geeksforgeeks.org/python-merge-two-lists-into-list-of-tuples/
+    # So to reshape this do tomorrow
+    lenClose = len(dateListClose)
+    print(numpy.array(dateListClose).shape)
+    print(numpy.array(dateListVolume).shape)
+    print(dateListClose)
+    # 1.) Pair them into a new array of [(P,V),(P,V)....(Pn,Vn)]
+    # 2.) Reshape the new array into 36,lookback*blocks,2
+    # Goal in this sample is 6,6,2
+    # 3.) NewArray=numpy.reshape(newarray, dateListClose.size/lookback,lookback,2)
+    dateListCloseArr = []
+    dateListVolumeArr = []
+    dualArray = numpy.array([[]])  # 2D Array
+    # https://www.pluralsight.com/guides/different-ways-create-numpy-arrays
+    dualArray = numpy.zeros((lenClose, 2), dtype=float)
+    print(lenClose)
+    for i in range(lenClose):
+        dualArray[i][0] = numpy.array(dateListClose)[i]
+        dualArray[i][1] = numpy.array(dateListVolume)[i]
+    print(dualArray)
+    print(numpy.array(dualArray).shape)
+    print(int(lenClose / lookback))
+    # Temporarily need this shape
+    # (5675, 2, 6)
+    # finalArray=numpy.reshape(dualArray,(int(lenClose/lookback),lookback,2))
+    #   finalArray = dualArray
+    print("dualArray={}".format(dualArray))
+    # ->import matplotlib.pyplot as plt
+    scaler = MinMaxScaler(feature_range=(0, 1))
+
+    dualArrayfitted = scaler.fit_transform(dualArray)
+    # refit the scaler for a single price vector
+    # scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    print("Final re-fitting of scaler to one vector price")
+    dataListArrfittedPriceOnly = scaler.fit_transform(numpy.reshape(numpy.array(dateListClose), (-1, 1)))
+
+    blocks = len(dateListClose) / (lookback)
+    # LOAD MODEL
+    json_file = open('model.json', 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    loaded_model = keras.model.model_from_json(loaded_model_json)
+    loaded_model.load_weights("model.h5")
+    print("Loaded model from disk")
+    loaded_model.compile(loss='mean_squared_error', optimizer='adam')
+    # ERROR is HERE!!!
+    print(dualArrayfitted.shape)
+    # Shapes this into original LSTM input shape for inverse transform e.g. shape = (n,6,2)
+
+    #    diagnosticArray = numpy.reshape(scaler.fit_transform(dualArray), (int(lenClose/ lookback), lookback,2 ))
+    #    print("diagnosticArray shape={}".format(diagnosticArray.shape))
+
+    # Shapes this into original LSTM input shape for inverse transform e.g. shape = (n,6,2)
+    # score = loaded_model.predict(numpy.reshape(scaler.fit_transform(dualArray), (int(lenClose/ lookback), lookback,2 )), verbose=0)
+    score = loaded_model.predict(numpy.reshape(dualArrayfitted, (int(lenClose / lookback), lookback, 2)), verbose=0)
+    print("Actual shape of input array={}".format(
+        numpy.reshape(dualArrayfitted, (int(lenClose / lookback), lookback, 2))))
+    print("last price/volume vals of dualArray={}".format(dualArray[-1:]))
+    print(numpy.array(score).shape)
+    print("Score={}".format(score))
+    # Your are here 12/16/19
+    # (output is 6,1)  but gets transfered back to (3,2) for the inverse transform
+    print('***********************************************************')
+    print('*                 Scores comparison                       *')
+    print('***********************************************************')
+    print(
+        "This should have produced only price vector but produces a prediction that is 3 rows of price/volume pairs(weird) or 3 days in this case")
+    print("#2.) Final Predicted Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    print('')
+    odd = False
+    if len(score) % 2 == 0:
+        print("#3.) Transformed Predicted Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    else:
+        odd = True
+        print("odd")
+        # The append doesn't work yet
+        print("**********************************")
+        print("The Score =", score)
+        score = numpy.append(score, [[0.0]], axis=0)
+        print("The new score=", score)
+        print("#3.) Transformed Predicted Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    # TRANSFORM HAS TO BE 2 COLUMNS (WHY? DUNNO)
+    trainPredictPlot = scaler.inverse_transform(numpy.reshape(score, (-1, 2)))
+    print("Train Predict Plot:\n", trainPredictPlot)
+    # *****************
+    # Add Plot for the dataset
+    # *****************
+    # ->plt.xlabel('Days from beginning')
+    # ->plt.ylabel('Price')
+    # ->if showOnlyGainers == True:
+    # ->    plt.title('Gainers Stock Prediction from Saved model for ' + stockName)
+    # ->else:
+    # ->    plt.title('Losers Stock Prediction from Saved model for ' + stockName)
+
+    # ->plt.grid(True)
+    # plt.plot(scaler.inverse_transform(dataset), color='b', lw=0.5, label='Dataset')
+    # Add Plot for the training model
+    # (-1,1) should turn it into a flat list
+    print("RESHAPED PREDICT PLOT", numpy.reshape(trainPredictPlot, (-1, 1)))
+    # You are here 11/20/19
+    # if odd subtract dummy element from 1 column array
+
+    # Put this section back in 12/15/19
+    # if odd == True:
+    # numpy.tail DELETE LAST ROW OF 2D ARRAY
+    #    trainPredictPlot = numpy.reshape(trainPredictPlot, (-1, 1))[:-1, :]
+    # else:
+    #    trainTemp = trainPredictPlot[:,0] #Turn from n,2 to n,1 array(selected 0th dimension)
+    # trainPredictPlot = numpy.reshape(trainPredictPlot, (-1, 1)) # Remove rows and turn into columns
+    #    trainPredictPlot =trainTemp
+
+    trainPredictPlot = numpy.reshape(trainPredictPlot, (-1, 1))
+
+    print("trainPredictPlot=")
+    print(trainPredictPlot)
+    print(trainPredictPlot.shape)
+    days = [];
+    q = 0
+    # correct this to full range!!!!!!!!!!!!!!ur here 12/16/2019
+    print("---------------------------")
+
+    for idx in range(len(trainPredictPlot)):
+        q = q + 1
+        days.append(q)
+    xi = list(range(len(days)))
+    # ->plt.xticks(xi, days)
+    # ->plt.plot(xi, trainPredictPlot, color='r', lw=1.0, label='window of ' + str(len(trainPredictPlot)) + ' days')
+    # plt.plot(trainPredictPlot, color='r', lw=1.0, label='window of ' + str(len(trainPredictPlot)) + ' days')
+    # plt.plot(numpy.reshape(trainPredictPlot,(-1,1)), color='r', lw=0.5, label='Window of 8 days')
+    # plt.plot(numpy.reshape(trainPredictPlot,(-1,1)), color='r', lw=0.5, label='Window of 8 days')
+    # Add Plot for the test model
+    # plt.plot(testPredictPlot, color='g', lw=0.5, label='Test')
+    # Do the Plot onscreen
+    # plt.legend(loc=1, fontsize="x-large")
+    # ->leg = plt.legend()
+    # get the lines and texts inside legend box
+    leg_lines = leg.get_lines()
+    leg_texts = leg.get_texts()
+    # bulk-set the properties of all lines and texts
+    # ->plt.setp(leg_lines, linewidth=4)
+    # ->plt.setp(leg_texts, fontsize='x-large')
+
+    print("Lastelement1=")
+    print(trainPredictPlot)
+
+    print(trainPredictPlot[trainPredictPlot.size - 1])
+
+    delta = trainPredictPlot[trainPredictPlot.size - 1] - trainPredictPlot[trainPredictPlot.size - 2]
+    if showOnlyGainers == True and showGraphs == True:
+        if ((trainPredictPlot[trainPredictPlot.size - 1] - trainPredictPlot[trainPredictPlot.size - 2]) > 0):
+            lstSelection.append("^Stock {} will go up by {}".format(stockName, str(delta)))
+            # ->plt.show()
+        else:
+            lstSelection.append("Stock {} will go down by {}".format(stockName, str(delta)))
+    else:
+        if ((trainPredictPlot[trainPredictPlot.size - 1] - trainPredictPlot[trainPredictPlot.size - 2]) <= 0):
+            lstSelection.append("Stock {} will go down by {}".format(stockName, str(delta)))
+            # ->plt.show()
+        else:
+            lstSelection.append("^Stock {} will go up  by {}".format(stockName, str(delta)))
+
+    # ->plt.clf()
+    # ->plt.cla()
+    # ->plt.close()
+    print("hello")
+    print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+
+    print('***********************************************************')
+    print('*                 FINAL PREDICTION VECTOR                 *')
+    print('***********************************************************')
+    print(
+        "Score Direct from prediction: There are 8 3 value window inputs TO THE MODEL and one (8X1) output coming out here...\n",
+        score)
+    print(
+        "...only last value of the (8X1) score vector is an actual prediction. The rest are predicted from prior 3 value windows")
+    print("Transformed Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))  # - row with 2 columns
+    varTransform = scaler.inverse_transform(numpy.reshape(score, (-1, 2)))
+    solutionVector = numpy.reshape(varTransform, len(score), -1)
+    print("solutionVector--feed this to your json function")
+    print(solutionVector)  # 8X1 of solutions(?)
+    print("Transformed 8 windows of 3 output vector:", solutionVector)
+    print('***********************************************************')
+    print('*                 FINAL PREDICTION                         *')
+    print('***********************************************************')
+    # Working here 6/21/2019
+    # print("Price PREDICTION={}".format(solutionVector[int(solutionVector.size/2)-1]))
+    print("Price PREDICTION={}".format(solutionVector[solutionVector.size - 1]))
+    # if odd==True:
+    #    print("PREDICTION=",solutionVector[len(score)-1])
+    # else:
+    #    print("PREDICTION=", solutionVector[len(score)])
+    # Probably should delete the below code
+    # Leave the rest of this alonetps://stackoverflow.com/questions/
+    # final = scaler.inverse_transform(numpy.reshape(score, (3, 1)))
+    # print("#4.) Transformed score with artifacts=", final)
+    # print("#4.) Transformed score without artifacts=",final[:,[0]] ) #ht49330195/how-to-use-inverse-transform-in-minmaxscaler-for-a-column-in-a-matrix
+    print("%s: %.2f%%" % (loaded_model.metrics_names[0], score[1] * 100))
+    print(" %s%%" % (loaded_model.metrics_names))
+    # return (listToJsonConverter(solutionVector.tolist()))
+    return (lstSelection)
+
+
+def Load_model_7AMobile(dateListClose, dateListVolume, stockName, lookback, blocks, showOnlyGainers, FunctionalAPI,
+                        lstSelection, showGraphs):
+    """
+    Loads multivalue model
+    Parameters:
+        dateLIstClose:Dictionary/Json
+        dateListVolume:Dictioary/Json
+        stockName:String
+        lookback:integer
+        blocks:integer
+        showOnlyGainers:boolean
+        FunctionslAPI:boolean
+    """
+    # Additional Comments
+    # Stop here and put in dateListVolume 9/1/20109
+    # convert to n,6,2 or n samples,6 timesteps and 2 feature
+    # 10/24/19
+    # Desired shape for combination of dateListClose and dateListVolume is n,6,2
+    # How to combine these most efficiently?
+    # Price (36,) Volume (36,)
+    # The short answer is
+    # n,6,2 or 6,6,2 for a total of 72(36+36)
+    # n,6,(Price,Volume)
+    # https://www.geeksforgeeks.org/python-merge-two-lists-into-list-of-tuples/
+    # So to reshape this do tomorrow
+    lenClose = len(dateListClose)
+    print(numpy.array(dateListClose).shape)
+    print(numpy.array(dateListVolume).shape)
+    print(dateListClose)
+    # 1.) Pair them into a new array of [(P,V),(P,V)....(Pn,Vn)]
+    # 2.) Reshape the new array into 36,lookback*blocks,2
+    # Goal in this sample is 6,6,2
+    # 3.) NewArray=numpy.reshape(newarray, dateListClose.size/lookback,lookback,2)
+    dateListCloseArr = []
+    dateListVolumeArr = []
+    dualArray = numpy.array([[]])  # 2D Array
+    # https://www.pluralsight.com/guides/different-ways-create-numpy-arrays
+    dualArray = numpy.zeros((lenClose, 2), dtype=float)
+    print(lenClose)
+    for i in range(lenClose):
+        dualArray[i][0] = numpy.array(dateListClose)[i]
+        dualArray[i][1] = numpy.array(dateListVolume)[i]
+    print(dualArray)
+    print(numpy.array(dualArray).shape)
+    print(int(lenClose / lookback))
+    # Temporarily need this shape
+    # (5675, 2, 6)
+    # finalArray=numpy.reshape(dualArray,(int(lenClose/lookback),lookback,2))
+    #   finalArray = dualArray
+    print("#1")
+    print("dualArray={}".format(dualArray))
+    # ->import matplotlib.pyplot as plt
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    print("#2")
+    dualArrayfitted = scaler.fit_transform(dualArray)
+    # refit the scaler for a single price vector
+    # scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    print("Final re-fitting of scaler to one vector price")
+    dataListArrfittedPriceOnly = scaler.fit_transform(numpy.reshape(numpy.array(dateListClose), (-1, 1)))
+
+    print("#3")
+    blocks = len(dateListClose) / (lookback)
+    # LOAD MODEL
+    json_file = open('model.json', 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    loaded_model = keras.model.model_from_json(loaded_model_json)
+    loaded_model.load_weights("model.h5")
+    print("Loaded model from disk")
+    loaded_model.compile(loss='mean_squared_error', optimizer='adam')
+    # ERROR is HERE!!!
+    print("#4")
+    print(dualArrayfitted.shape)
+    # Shapes this into original LSTM input shape for inverse transform e.g. shape = (n,6,2)
+
+    #    diagnosticArray = numpy.reshape(scaler.fit_transform(dualArray), (int(lenClose/ lookback), lookback,2 ))
+    #    print("diagnosticArray shape={}".format(diagnosticArray.shape))
+
+    # Shapes this into original LSTM input shape for inverse transform e.g. shape = (n,6,2)
+    # score = loaded_model.predict(numpy.reshape(scaler.fit_transform(dualArray), (int(lenClose/ lookback), lookback,2 )), verbose=0)
+    score = loaded_model.predict(numpy.reshape(dualArrayfitted, (int(lenClose / lookback), lookback, 2)), verbose=0)
+    print("#5.")
+    print("Actual shape of input array={}".format(
+        numpy.reshape(dualArrayfitted, (int(lenClose / lookback), lookback, 2))))
+    print("last price/volume vals of dualArray={}".format(dualArray[-1:]))
+    print(numpy.array(score).shape)
+    print("Score={}".format(score))
+    # Your are here 12/16/19
+    # (output is 6,1)  but gets transfered back to (3,2) for the inverse transform
+    print('***********************************************************')
+    print('*                 Scores comparison                       *')
+    print('***********************************************************')
+    print(
+        "This should have produced only price vector but produces a prediction that is 3 rows of price/volume pairs(weird) or 3 days in this case")
+    print("#2.) Final Predicted Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    print('')
+    odd = False
+    if len(score) % 2 == 0:
+        print("#3.) Transformed Predicted Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    else:
+        odd = True
+        print("odd")
+        # The append doesn't work yet
+        print("**********************************")
+        print("The Score =", score)
+        score = numpy.append(score, [[0.0]], axis=0)
+        print("The new score=", score)
+        print("#3.) Transformed Predicted Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    # TRANSFORM HAS TO BE 2 COLUMNS (WHY? DUNNO)
+    trainPredictPlot = scaler.inverse_transform(numpy.reshape(score, (-1, 2)))
+    print("Train Predict Plot:\n", trainPredictPlot)
+    # *****************
+    # Add Plot for the dataset
+    # *****************
+    # ->plt.xlabel('Days from beginning')
+    # ->plt.ylabel('Price')
+    # ->if showOnlyGainers == True:
+    # ->    plt.title('Gainers Stock Prediction from Saved model for ' + stockName)
+    # ->else:
+    # ->    plt.title('Losers Stock Prediction from Saved model for ' + stockName)
+
+    # ->plt.grid(True)
+    # plt.plot(scaler.inverse_transform(dataset), color='b', lw=0.5, label='Dataset')
+    # Add Plot for the training model
+    # (-1,1) should turn it into a flat list
+    print("RESHAPED PREDICT PLOT", numpy.reshape(trainPredictPlot, (-1, 1)))
+    # You are here 11/20/19
+    # if odd subtract dummy element from 1 column array
+
+    # Put this section back in 12/15/19
+    # if odd == True:
+    # numpy.tail DELETE LAST ROW OF 2D ARRAY
+    #    trainPredictPlot = numpy.reshape(trainPredictPlot, (-1, 1))[:-1, :]
+    # else:
+    #    trainTemp = trainPredictPlot[:,0] #Turn from n,2 to n,1 array(selected 0th dimension)
+    # trainPredictPlot = numpy.reshape(trainPredictPlot, (-1, 1)) # Remove rows and turn into columns
+    #    trainPredictPlot =trainTemp
+
+    trainPredictPlot = numpy.reshape(trainPredictPlot, (-1, 1))
+
+    print("trainPredictPlot=")
+    print(trainPredictPlot)
+    print(trainPredictPlot.shape)
+    days = [];
+    q = 0
+    # correct this to full range!!!!!!!!!!!!!!ur here 12/16/2019
+    print("---------------------------")
+
+    for idx in range(len(trainPredictPlot)):
+        q = q + 1
+        days.append(q)
+    xi = list(range(len(days)))
+    # ->plt.xticks(xi, days)
+    # ->plt.plot(xi, trainPredictPlot, color='r', lw=1.0, label='window of ' + str(len(trainPredictPlot)) + ' days')
+    # plt.plot(trainPredictPlot, color='r', lw=1.0, label='window of ' + str(len(trainPredictPlot)) + ' days')
+    # plt.plot(numpy.reshape(trainPredictPlot,(-1,1)), color='r', lw=0.5, label='Window of 8 days')
+    # plt.plot(numpy.reshape(trainPredictPlot,(-1,1)), color='r', lw=0.5, label='Window of 8 days')
+    # Add Plot for the test model
+    # plt.plot(testPredictPlot, color='g', lw=0.5, label='Test')
+    # Do the Plot onscreen
+    # plt.legend(loc=1, fontsize="x-large")
+    # ->leg = plt.legend()
+    # get the lines and texts inside legend box
+    leg_lines = leg.get_lines()
+    leg_texts = leg.get_texts()
+    # bulk-set the properties of all lines and texts
+    # ->plt.setp(leg_lines, linewidth=4)
+    # ->plt.setp(leg_texts, fontsize='x-large')
+    print("Lastelement1=")
+    print(trainPredictPlot)
+
+    print(trainPredictPlot[trainPredictPlot.size - 1])
+
+    delta = trainPredictPlot[trainPredictPlot.size - 1] - trainPredictPlot[trainPredictPlot.size - 2]
+    if showOnlyGainers == True and showGraphs == True:
+        if ((trainPredictPlot[trainPredictPlot.size - 1] - trainPredictPlot[trainPredictPlot.size - 2]) > 0):
+            lstSelection.append("^Stock {} will go up by {}".format(stockName, str(delta)))
+            # ->plt.show()
+        else:
+            lstSelection.append("Stock {} will go down by {}".format(stockName, str(delta)))
+    else:
+        if ((trainPredictPlot[trainPredictPlot.size - 1] - trainPredictPlot[trainPredictPlot.size - 2]) <= 0):
+            lstSelection.append("Stock {} will go down by {}".format(stockName, str(delta)))
+            # ->plt.show()
+        else:
+            lstSelection.append("^Stock {} will go up  by {}".format(stockName, str(delta)))
+
+    # ->plt.clf()
+    # ->plt.cla()
+    # ->plt.close()
+    print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+
+    print('***********************************************************')
+    print('*                 FINAL PREDICTION VECTOR                 *')
+    print('***********************************************************')
+    print(
+        "Score Direct from prediction: There are 8 3 value window inputs TO THE MODEL and one (8X1) output coming out here...\n",
+        score)
+    print(
+        "...only last value of the (8X1) score vector is an actual prediction. The rest are predicted from prior 3 value windows")
+    print("Transformed Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))  # - row with 2 columns
+    varTransform = scaler.inverse_transform(numpy.reshape(score, (-1, 2)))
+    solutionVector = numpy.reshape(varTransform, len(score), -1)
+    print("solutionVector--feed this to your json function")
+    print(solutionVector)  # 8X1 of solutions(?)
+    print("Transformed 8 windows of 3 output vector:", solutionVector)
+    print('***********************************************************')
+    print('*                 FINAL PREDICTION                         *')
+    print('***********************************************************')
+    # Working here 6/21/2019
+    # print("Price PREDICTION={}".format(solutionVector[int(solutionVector.size/2)-1]))
+    print("Price PREDICTION={}".format(solutionVector[solutionVector.size - 1]))
+    # if odd==True:
+    #    print("PREDICTION=",solutionVector[len(score)-1])
+    # else:
+    #    print("PREDICTION=", solutionVector[len(score)])
+    # Probably should delete the below code
+    # Leave the rest of this alonetps://stackoverflow.com/questions/
+    # final = scaler.inverse_transform(numpy.reshape(score, (3, 1)))
+    # print("#4.) Transformed score with artifacts=", final)
+    # print("#4.) Transformed score without artifacts=",final[:,[0]] ) #ht49330195/how-to-use-inverse-transform-in-minmaxscaler-for-a-column-in-a-matrix
+    print("%s: %.2f%%" % (loaded_model.metrics_names[0], score[1] * 100))
+    print(" %s%%" % (loaded_model.metrics_names))
+    # return (listToJsonConverter(solutionVector.tolist()))
+    return (lstSelection)
+
+
+
+def Load_model_8AMobile(dateListClose, dateListVolume, stockName, lookback, blocks, showOnlyGainers, FunctionalAPI,
+                        lstSelection, showGraphs):
+    """
+    Loads multivalue model
+    Parameters:
+        dateLIstClose:Dictionary/Json
+        dateListVolume:Dictioary/Json
+        stockName:String
+        lookback:integer
+        blocks:integer
+        showOnlyGainers:boolean
+        FunctionslAPI:boolean
+    """
+    # Additional Comments
+    # Stop here and put in dateListVolume 9/1/20109
+    # convert to n,6,2 or n samples,6 timesteps and 2 feature
+    # 10/24/19
+    # Desired shape for combination of dateListClose and dateListVolume is n,6,2
+    # How to combine these most efficiently?
+    # Price (36,) Volume (36,)
+    # The short answer is
+    # n,6,2 or 6,6,2 for a total of 72(36+36)
+    # n,6,(Price,Volume)
+    # https://www.geeksforgeeks.org/python-merge-two-lists-into-list-of-tuples/
+    # So to reshape this do tomorrow
+
+    lenClose = len(dateListClose)
+    print(numpy.array(dateListClose).shape)
+    print(numpy.array(dateListVolume).shape)
+    print(dateListClose)
+    print("#1")
+    dateListCloseArr = []
+    dateListVolumeArr = []
+    dualArray = numpy.array([[]])  # 2D Array
+    dualArray = numpy.zeros((lenClose, 2), dtype=float)
+    print(lenClose)
+    for i in range(lenClose):
+        dualArray[i][0] = numpy.array(dateListClose)[i]
+        dualArray[i][1] = numpy.array(dateListVolume)[i]
+    print(dualArray)
+    print(numpy.array(dualArray).shape)
+    print(int(lenClose / lookback))
+    # Temporarily need this shape
+    # (5675, 2, 6)
+    # finalArray=numpy.reshape(dualArray,(int(lenClose/lookback),lookback,2))
+    #   finalArray = dualArray
+    print("#1a")
+    print("dualArray={}".format(dualArray))
+    # ->import matplotlib.pyplot as plt
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    print("#2b")
+    dualArrayfitted = scaler.fit_transform(dualArray)
+    # refit the scaler for a single price vector
+    # scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    print("Final re-fitting of scaler to one vector price")
+    dataListArrfittedPriceOnly = scaler.fit_transform(numpy.reshape(numpy.array(dateListClose), (-1, 1)))
+
+    print("#3c")
+    blocks = len(dateListClose) / (lookback)
+    # LOAD MODEL
+    #New Code
+    import os
+    foldera = os.path.dirname(os.path.abspath(__file__))
+    print("_________________________")
+    print(foldera)
+    filepath1 = os.path.join(foldera, 'model.json')
+    filepath2 = os.path.join(foldera, 'model.h5')
+    #**************************
+
+
+    json_file = open(filepath1, 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    #ERror is here 7/29/2020
+
+    loaded_model = tf.keras.models.model_from_json(loaded_model_json)
+    loaded_model.load_weights(filepath2)
+    print("Loaded model from disk")
+    loaded_model.compile(loss='mean_squared_error', optimizer='adam')
+    # NEW CODE 8/15/2020
+    print("Return Area")
+
+
+    print(dualArrayfitted.shape)
+    # Shapes this into original LSTM input shape for inverse transform e.g. shape = (n,6,2)
+
+    #    diagnosticArray = numpy.reshape(scaler.fit_transform(dualArray), (int(lenClose/ lookback), lookback,2 ))
+    #    print("diagnosticArray shape={}".format(diagnosticArray.shape))
+
+    # Shapes this into original LSTM input shape for inverse transform e.g. shape = (n,6,2)
+    # score = loaded_model.predict(numpy.reshape(scaler.fit_transform(dualArray), (int(lenClose/ lookback), lookback,2 )), verbose=0)
+    score = loaded_model.predict(numpy.reshape(dualArrayfitted, (int(lenClose / lookback), lookback, 2)), verbose=0)
+    print("Actual shape of input array={}".format(
+        numpy.reshape(dualArrayfitted, (int(lenClose / lookback), lookback, 2))))
+    print("last price/volume vals of dualArray={}".format(dualArray[-1:]))
+    print(numpy.array(score).shape)
+    print("Score={}".format(score))
+    # Your are here 12/16/19
+    # (output is 6,1)  but gets transfered back to (3,2) for the inverse transform
+    print('***********************************************************')
+    print('*                 Scores comparison                       *')
+    print('***********************************************************')
+    print(
+        "This should have produced only price vector but produces a prediction that is 3 rows of price/volume pairs(weird) or 3 days in this case")
+    print("#2.) Final Predicted Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    print('')
+    odd = False
+
+
+#START NEW CODE 8/15/2020
+    if len(score) % 2 == 0:
+        print("#3.) Transformed Predicted Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    else:
+        odd = True
+        print("odd")
+        # The append doesn't work yet
+        print("**********************************")
+        print("The Score =", score)
+        score = numpy.append(score, [[0.0]], axis=0)
+        print("The new score=", score)
+        print("#3.) Transformed Predicted Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))
+    # TRANSFORM HAS TO BE 2 COLUMNS (WHY? DUNNO)
+    trainPredictPlot = scaler.inverse_transform(numpy.reshape(score, (-1, 2)))
+    print("Train Predict Plot:\n", trainPredictPlot)
+    print("RESHAPED PREDICT PLOT", numpy.reshape(trainPredictPlot, (-1, 1)))
+
+    trainPredictPlot = numpy.reshape(trainPredictPlot, (-1, 1))
+
+    print("trainPredictPlot=")
+    print(trainPredictPlot)
+    print(trainPredictPlot.shape)
+    days = [];
+    q = 0
+    # correct this to full range!!!!!!!!!!!!!!ur here 12/16/2019
+    print("---------------------------")
+
+
+    #1.)
+
+    print("Lastelement1=")
+    print(trainPredictPlot)
+    print(trainPredictPlot[trainPredictPlot.size - 1])
+    delta = trainPredictPlot[trainPredictPlot.size - 1] - trainPredictPlot[trainPredictPlot.size - 2]
+    lstSelection.append("************************\n")
+    lstSelection.append("Starting lstSelection")
+
+    if showOnlyGainers == True:
+        if ((trainPredictPlot[trainPredictPlot.size - 1] - trainPredictPlot[trainPredictPlot.size - 2]) > 0):
+            lstSelection.append("^Stock {} will go up by {}".format(stockName, str(delta)))
+    #        if showGraphs == True:
+    #            plt.show()
+        else:
+            lstSelection.append("Stock {} will go down by {}".format(stockName, str(delta)))
+    else:
+        if ((trainPredictPlot[trainPredictPlot.size - 1] - trainPredictPlot[trainPredictPlot.size - 2]) <= 0):
+            lstSelection.append("Stock {} will go down by {}".format(stockName, str(delta)))
+    #         if showGraphs == True:
+    #            plt.show()
+        else:
+            lstSelection.append("^Stock {} will go up  by {}".format(stockName, str(delta)))
+
+    print("doober=")
+    #print(lstSelection)
+
+    #You were here 8/27/2020
+    print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+
+    print('***********************************************************')
+    print('*                 FINAL PREDICTION VECTOR                 *')
+    print('***********************************************************')
+    print(
+        "Score Direct from prediction: There are 8 3 value window inputs TO THE MODEL and one (8X1) output coming out here...\n",
+        score)
+    print(
+        "...only last value of the (8X1) score vector is an actual prediction. The rest are predicted from prior 3 value windows")
+    print("Transformed Score:\n", scaler.inverse_transform(numpy.reshape(score, (-1, 2))))  # - row with 2 columns
+    varTransform = scaler.inverse_transform(numpy.reshape(score, (-1, 2)))
+    # Point #5
+
+    # solutionVector = numpy.reshape(varTransform, len(score), -1)
+    solutionVector = varTransform
+
+    print("solutionVector--feed this to your json function")
+    print(solutionVector)  # 8X1 of solutions(?)
+    print("Transformed 8 windows of 3 output vector:", solutionVector)
+
+    print('***********************************************************')
+    print('*                 FINAL PREDICTION                         *')
+    print('***********************************************************')
+    # Working here 6/21/2019
+    # print("Price PREDICTION={}".format(solutionVector[int(solutionVector.size/2)-1]))
+    # print("Price PREDICTION={}".format(solutionVector[solutionVector.size - 1]))
+    # if odd==True:
+    #    print("PREDICTION=",solutionVector[len(score)-1])
+    # else:
+    #    print("PREDICTION=", solutionVector[len(score)])
+    # Probably should delete the below code
+    # Leave the rest of this alonetps://stackoverflow.com/questions/
+    # final = scaler.inverse_transform(numpy.reshape(score, (3, 1)))
+    # print("#4.) Transformed score with artifacts=", final)
+    # print("#4.) Transformed score without artifacts=",final[:,[0]] ) #ht49330195/how-to-use-inverse-transform-in-minmaxscaler-for-a-column-in-a-matrix
+    # print(score[1] * 100)
+    # print(loaded_model.metrics_names[0])
+    # exit(0)
+
+    #if blnChangeUp == True:
+    #    print("%s: %.2f%% %.2f%%" % (loaded_model.metrics_names[0], score[1, 0] * 100, score[1, 1] * 100))
+    #else:
+    #    print("%s: %.2f%%" % (loaded_model.metrics_names[0], score[1] * 100))
+    print(" %s%%" % (loaded_model.metrics_names))
+    print("score = %s" % (score))
+    #print("lstSelection={}".format(lstSelection))
+
+
+    return (lstSelection)
+
+
+
+
+def fileOpen(x):
+    #files1 =  os.environ["HOME"];
+    #files1 = pathlib.Path.cwd()
+    #files1 = pathlib.Path.home()
+
+    #f = open("/home/development/AndroidStudioProjects/ChaquopyAttempt1/app/replacement/dir/demofile5.txt", "w")
+    #f.write("Woops! I have deleted the content!")
+    #f.close()
+
+    #x=files1
+    import os
+    THIS_FOLDER = os.path.dirname(os.path.abspath(__file__))
+    my_file = os.path.join(THIS_FOLDER, 'demofile5.txt')
+    x = my_file
+    f = open(my_file, "a")
+    f.write("Hello world2")
+    f.close()
+    f = open(my_file,"r")
+    x = f.read()
+    f.close()
+    return x
+
+# /home/development/AndroidStudioProjects/ChaquopyAttempt1/app/replacement/dir/mod.py
+
+def getValuesFromNetMakeIt(stockName, numVals, choice):
+    # Gets last numVals values for Prediction(later)
+    it = "fubar"
+    try:
+        quandl.ApiConfig.api_key = "6X-hxfxiPcSb3uTS2UyB"
+        df = quandl.get(stockName)
+        it = "fubar1A"
+        it = df.to_string()
+        # it = df.tail(2)
+
+    except OSError as err:
+        it = str(err)
+    except ValueError:
+        it = str("ValueError")
+    except:
+        it = "Unexpected error:" + sys.exc_info()[0]
+    # / home / development / PycharmProjects / TrendGod1 / Python4.py
+    # / home / development / AndroidStudioProjects / ChaquopyAttempt1 / app / replacement / dir
+    return (it)
+
+
+def getValuesFromNet(stockName, numVals, choice):
+    # Gets last numVals values for Prediction(later)
+    quandl.ApiConfig.api_key = "6X-hxfxiPcSb3uTS2UyB"
+    # df = quandl.get("WIKI/KR")
+    # df = quandl.get("EOD/MSFT")
+    # df = quandl.get("SHARADAR/SEP",ticker='AAPL')
+    # df = quandl.get_table('SHARADAR/SEP', ticker=stockName)
+    df = quandl.get(stockName)
+
+    #for index, row in df.head().iterrows():
+    #    print(index, row['Open'], row['High'], row['Adj_Close'])
+    if choice == 'Adj_Close':
+        dilbert = df['Adj_Close'].to_dict()
+    if choice == 'Volume':
+        dilbert = df['Volume'].to_dict()
+
+    if choice == 'Adj_Close':
+        dffinal = pd.DataFrame.from_dict(dilbert, orient='index', columns=["Adj Close"])
+    if choice == 'Volume':
+        dffinal = pd.DataFrame.from_dict(dilbert, orient='index', columns=["Volume"])
+    Debug = True
+    # This actually splits upa nd creates your
+    # Independent and Dependent Variables
+    # But it's complicated and you need to get back to it.
+    # look_back = 3
+    numpy.random.seed(7)
+    dataframe = dffinal
+    if choice == 'Adj_Close':
+        lastValsList = dataframe['Adj Close'].tail(numVals).tolist()
+    if choice == 'Volume':
+        lastValsList = dataframe['Volume'].tail(numVals).tolist()
+    return (lastValsList)
+
+
+def Main(Symbol, choice, showOnlyGainers, Epochs, skipLSTM, lstSelection):
+    """
+    Main:Processes 1 STOCK AT A TIME
+    Symbol: string
+    choice: integer
+    showOnlyGainers: boolean
+    Epochs: integer
+    skipLSTM: boolean
+    """
+    cChoseQData = 1  # 1 = EOD 2 = Sharadar
+    cChoseQData = choice
+    # Symbol = "CDMO"
+    stockName = "EOD/" + Symbol  # EOD dataset for getValuesFromNet and LSTM_model_4A
+    lookBack = 6  # number of training data points
+    segments = 6  # Multipler of data (points + 1)
+    # Epochs = 1
+    # is 78 bad?
+    # 6/29/2019 was lastValsList = getValuesFromNet(stockName, (lookBack+1) * segments)  # get 24 or some other multiple of 6
+    FunctionalAPI = False
+    tempCorrectionFactor = 1  # 2 for load_model_6a
+    lastValsListClose = getValuesFromNet(stockName, tempCorrectionFactor * (lookBack) * segments,
+                                         'Adj_Close')  # get 24 or some other multiple of 6
+    lastValsListVol = getValuesFromNet(stockName, tempCorrectionFactor * (lookBack) * segments, 'Volume')
+    showGraphs = False
+    # try:
+    if cChoseQData == 1:
+        # Quandl EOD
+        print("Start LSTM_model_8A")
+        if skipLSTM is not True:
+            retCode = LSTM_model_10A(Epochs,
+                                     stockName,
+                                     lookBack,
+                                     FunctionalAPI)
+            print("Start Load_model_4A")
+        # retJSON = Load_model_7A(lastValsListClose,
+        lstSelection = Load_model_7AMobile(lastValsListClose,
+                                           lastValsListVol,
+                                           stockName,
+                                           lookBack,
+                                           segments,
+                                           showOnlyGainers,
+                                           FunctionalAPI,
+                                           lstSelection,
+                                           showGraphs)
+        print("*************************************************************")
+        # print("Json output prediction ", retJSON)
+        print("The Predictions are: {}".format(lstSelection))
+        print("*************************************************************")
+    else:
+        # Quandl SHARADAR
+        stockName = "MSFT"  # EOD dataset for getValuesFromNet and LSTM_model_4A
+        lastValsList = getValuesFromNet2(stockName, 24)  # get 24
+        # LSTM_model_5A(2, stockName)
+        retCode = Load_model_4A(lastValsList, stockName)
+    # except:
+    #        print("***********ERROR***********")
+    return (lstSelection)
+
+def FinVizScreener2(setLimit, metrics):
+    """
+    Screens stocks from FinViz
+    Parameters
+    -----------
+    setLimit: integer
+    metrics: = {'RSI (14)RH':70,'P/ERH':28}
+    """
+
+    # Document all filters 7/21/2019
+    # Filter Columns= +/- No., Ticker, Company, Sector, Industry, Country, Market Cap, P/E, Price, Change,Volume
+    # filters=['n_majornews,'exch_nasd', 'idx_sp500']'])
+
+    # filters = ['exch_nasd', 'idx_sp500','sh_price_u1']  # Shows companies in NASDAQ which are in the S&P500
+    # filters = ['sh_price_u1']  # Shows companies in NASDAQ which are in the S&P500
+    filters = ['sh_price_u1']
+    # filters = ['exch_amex','fa_div_high']
+    # Get the first 50 results sorted by price ascending
+
+    #from finviz.screener import Screener
+    stock_list = Screener(filters=filters, order='-Change')
+    # Export the screener results to .csv
+    stock_list.to_csv()
+    # Cr    eate a SQLite database
+    stock_list.to_sqlite()
+    stock_list.add(filters=['n_majornews'])
+    print(stock_list)
+    # for stock in stock_list[9:19]:  # Loop through 10th - 20th stocks
+    listTickers = []
+    outPut = False
+    counter = 0
+    decideForFilter = 0
+    for stock in stock_list:
+        counter = counter + 1
+        if counter < setLimit:
+            dict1A = finviz.get_stock(stock['Ticker'])
+            decideForFilter = 0
+            for key in dict1A:
+                # Set up "AND" Filter
+                # https://stackoverflow.com/questions/6812031/how-to-make-unicode-string-with-python3
+                # https://stackoverflow.com/questions/5424716/how-to-check-if-string-input-is-a-number
+                silError = False
+
+                # try:
+                #    val = float(str(dict1A[key]))
+                # except ValueError:
+                # print("That's not an float!"+str(dict1A[key]))
+                #    silError = True
+
+                # New Gross Margin check if float..strip %
+                try:
+                    val = float(str(dict1A[key]).strip('%'))
+                    silError = False
+                except ValueError:
+                    silError = True
+
+                if key == 'RSI (14)':
+                    if silError == False:
+                        # print("RSI="+ str(dict1A[key]))
+                        if float(dict1A[key]) <= metrics[key + 'RH']:  # 70:
+                            decideForFilter += 1
+                if key == 'P/E':
+                    if silError == False:
+                        # print("P/E:=" + str(dict1A[key]))
+                        if float(dict1A[key]) <= metrics[key + 'RH']:  # 28:
+                            decideForFilter += 100
+                # beginning of new stuff 12/19/2019
+                # if key == 'Debt/Eq':
+                #    if silError == False:
+                #        if float(dict1A[key]) <= metrics[key+'RH']:
+                #            decideForFilter += 0
+                if key == 'Gross Margin':
+                    if silError == False:
+                        if (float(str(dict1A[key]).strip('%')) <= metrics[key + 'RH']) and (
+                                float(str(dict1A[key]).strip('%')) >= metrics[key + 'LH']):
+                            decideForFilter += 3
+                # if key == 'Quick Ratio':
+                #    if silError == False:
+                #        if (float(str(dict1A[key])) <= metrics[key+'RH']) and (float(str(dict1A[key])) >= metrics[key+'LH']):
+                #            decideForFilter += 3
+                if key == 'Debt/Eq':
+                    if silError == False:
+                        if (float(str(dict1A[key]).strip('%')) <= metrics[key + 'RH']) and (
+                                float(str(dict1A[key]).strip('%')) >= metrics[key + 'LH']):
+                            decideForFilter += 3
+                # if key == 'LT Debt/Eq':
+                # Has to meet all criteria to add up to 107
+                try:
+                    # if decideForFilter == 101:
+                    # if decideForFilter == 104: then 107 THEN 110
+                    if decideForFilter == 107:
+                        # print("Appending List Ticers")
+                        listTickers.append(stock['Ticker'])
+                        decideForFilter = -666
+                    if outPut == True:
+                        print(stock['Ticker'], stock['Price'], stock['Volume'])  # print symbol and price
+                        print(
+                            "___________________________________________________________________________________________________________________________________________________________________")
+                        print(finviz.get_stock(stock['Ticker']))
+                        print("********NEWS NEWS NEWS********")
+                        print(finviz.get_news(stock['Ticker']))
+                        print(finviz.get_insider(stock['Ticker']))
+                except:
+                    print("Error:Couldn't Retrieve News about " + stock['Ticker'] + " from FinViz.")
+        # stock_list.add(filters=['fa_div_high'])  # Show stocks with high dividend yield or just stock_list(filters=['fa_div_high'])
+        else:
+            break;
+    return (listTickers)
+
+
+def getVolatilesCSV2(listLimit, hyperList):
+    """
+    A Volatility calculator using a ticker list of most volatilies.
+    Calculates volatility. Formerly used in place of FinViz and
+    may have to be rerealized for nasdaq penny stocks
+    parameters:
+    listLimit: integer
+    hyperlist: []
+    """
+    # https://www.fool.com/knowledge-center/how-to-calculate-annualized-volatility.aspx
+
+    timeB = datetime.today().strftime("%m-%d-%Y")
+    timeA = (datetime.today() - timedelta(days=1)).strftime("%m-%d-%Y")
+    timeMinus30 = (datetime.today() - timedelta(days=30)).strftime("%m-%d-%Y")
+    timeMinus15 = (datetime.today() - timedelta(days=15)).strftime("%m-%d-%Y")
+    timePlus15 = (datetime.today() + timedelta(days=15)).strftime("%m-%d-%Y")
+    url = 'https://s3.amazonaws.com/quandl-production-static/end_of_day_us_stocks/ticker_list.csv'
+    # url = 'OTCBB_20190703.csv'
+    response = requests.get(url)
+
+    quandl.ApiConfig.api_key = "6X-hxfxiPcSb3uTS2UyB"
+    if response.status_code != 200:
+        print('Failed to get data:', response.status_code)
+    else:
+        if len(hyperList) > 0:
+            wrapper = hyperList
+
+        else:
+            wrapper = csv.reader(response.text.strip().split('\n'))
+            print("getting hyperlist")
+        x = 0
+        stockList = []
+        volatilityList = []
+        list1 = []
+        dict1 = {}
+        print("********************")
+        for record in wrapper:
+            if len(hyperList) > 0:
+                stockName = record
+                print("Getting hyperlist2")
+            else:
+                stockName = record[0]
+            if stockName != 'Ticker':
+                x = x + 1
+                if x <= listLimit or listLimit == -666:
+                    # try:
+                    print("((((((((((((((()))))))))))))))")
+                    # stockNameQuandl="EOD/"+"AAPL"
+                    if len(hyperList) > 0:
+                        stockNameQuandl = "EOD/" + record
+                    else:
+                        stockNameQuandl = "EOD/" + record[0]
+                    # Put previous business day calculator here!!!!
+                    print(timeA)
+                    print(timeB)
+                    print("Stockname=" + stockNameQuandl)
+                    # https://stackoverflow.com/questions/22898824/filtering-pandas-dataframes-on-dates
+                    # df = quandl.get(stockNameQuandl, start_date=timeA, end_date=timeB)
+                    # [timeA-30] with timeB as RHS
+                    try:
+                        df = quandl.get(stockNameQuandl)
+                        dfSubset = df[timeA:timeB]
+                        dfMonthly = df[timeMinus15:timeB]  # timeMinus30
+                        idx = 0
+                        hval = [len(dfMonthly)]
+                        print("Length of Data=" + str(len(dfMonthly)))
+                        for idx in range(0, len(dfMonthly) - 1):
+                            PPrev = dfMonthly.iloc[idx]['Adj_Close']
+                            PNext = dfMonthly.iloc[idx + 1]['Adj_Close']
+                            DailyPCTChange = ((PNext - PPrev) / PPrev) * 100
+                            # print("PPrev="+str(PPrev)+"\n")
+                            hval.append(DailyPCTChange)
+                        Volatility = statistics.stdev(hval) * math.sqrt(10)  # 21
+                        stockList.append(stockName)
+                        volatilityList.append(Volatility)
+                        dict1.update({stockName: Volatility})
+                    except:
+                        print("Quandl Error")
+
+                # except:
+                #    x = x - 1
+                #    print("Quandl Symbol Error1\n")
+    return (dict(sorted(set(zip(stockList, volatilityList)), key=lambda x: (-x[1], x[0]))))
+
+
+# Android Entry Points
+
+def f(strName):
+    model = tensorflow.keras.Sequential()
+    # os.environ["KERAS_BACKEND"] = "theano"
+    strName = strName + "Contact with Python"
+    json_config = model.to_json()
+    reinitialized_model = keras.models.model_from_json(json_config)
+    return strName
+#Start work here 11/03/2020
+def Main(Symbol, choice, showOnlyGainers, Epochs, skipLSTM, lstSelection, blnChangeUp, showGraphs, lookBack,
+         lookForward, segments):
+
+
+    # Symbol = "CDMO"
+    stockName = "EOD/" + Symbol  # EOD dataset for getValuesFromNet and LSTM_model_4A
+
+    # Epochs = 1
+    # is 78 bad?
+    # 6/29/2019 was lastValsList = getValuesFromNet(stockName, (lookBack+1) * segments)  # get 24 or some other multiple of 6
+    FunctionalAPI = False
+    tempCorrectionFactor = 1  # 2 for load_model_6a
+    lastValsListClose = getValuesFromNet(stockName, tempCorrectionFactor * (lookBack) * segments,
+                                         'Adj_Close')  # get 24 or some other multiple of 6
+    lastValsListVol = getValuesFromNet(stockName, tempCorrectionFactor * (lookBack) * segments, 'Volume')
+
+    # try:
+    if choice == 1:
+        # Quandl EOD
+        print("Start LSTM_model_8A")
+        if skipLSTM is not True:
+            retCode = LSTM_model_10A(Epochs,
+                                     stockName,
+                                     lookBack,
+                                     lookForward,
+                                     FunctionalAPI)
+            print("Start Load_model_4A")
+        # retJSON = Load_model_7A(lastValsListClose,
+        lstSelection = Load_model_7A(lastValsListClose,
+                                     lastValsListVol,
+                                     stockName,
+                                     lookBack,
+                                     lookForward,
+                                     segments,
+                                     showOnlyGainers,
+                                     FunctionalAPI,
+                                     lstSelection,
+                                     showGraphs,
+                                     blnChangeUp)
+        print("*************************************************************")
+        # print("Json output prediction ", retJSON)
+        print("The Predictions are: {}".format(lstSelection))
+        print("*************************************************************")
+
+    return (lstSelection)
+
+def MainRoutine2(Symbol, choice, showOnlyGainers, Epochs, skipLSTM, lstSelection, blnChangeUp):
+    cChoseQData = 1  # 1 = EOD 2 = Sharadar
+    cChoseQData = choice
+    stockName = "EOD/" + Symbol  # EOD dataset for getValuesFromNet and LSTM_model_4A
+    lookBack = 6  # number of training data points
+    segments = 6  # Multipler of data (points + 1)
+    FunctionalAPI = False
+    tempCorrectionFactor = 1  # 2 for load_model_6a
+    showGraphs = False
+    #8.30.2020 commented out
+    #lstSelection.append(getValuesFromNetMakeIt(stockName, tempCorrectionFactor * (lookBack) * segments,
+    #                                           'Adj_Close'))  # get 24 or some other multiple of 6
+    lastValsListClose = getValuesFromNet(stockName, tempCorrectionFactor * (lookBack) * segments,'Adj_Close')  # get 24 or some other multiple of 6
+    lastValsListVol = getValuesFromNet(stockName, tempCorrectionFactor * (lookBack) * segments, 'Volume')
+    showGraphs = False
+    #New 4/24/2020
+
+    if skipLSTM is not True:
+        retCode = LSTM_model_10AMobile(Epochs,
+                                 stockName,
+                                 lookBack,
+                                 FunctionalAPI)
+    #    print("Start Load_model_4A")
+    # retJSON = Load_model_7A(lastValsListClose,
+    lstSelection = Load_model_8AMobile(lastValsListClose,
+                                       lastValsListVol,
+                                       stockName,
+                                       lookBack,
+                                       segments,
+                                       showOnlyGainers,
+                                       FunctionalAPI,
+                                       lstSelection,
+                                       showGraphs)
+
+    return lstSelection
+
+
+# Python program to convert a list to string
+
+# Function to convert
+def listToString(s):
+    # initialize an empty string
+    str1 = ""
+    c = 0
+    # traverse in the string
+    for ele in s:
+        str1 += ele
+        c = c + 1
+        # return string
+
+    return str1
+
+def Main1Makeit2(strName):
+    'Java Array turns to a python array here'
+    #print("1.) -----------------------------------------")
+    strName = strName + "2"
+    #strName.append("2")
+    #print(strName[0])
+    #print(strName[1])
+    return strName
+# Android Caller
+def Main1Makeit(strName):
+    #Turns this into an implicitly typed string(late binding)
+    #Parameters: strName[0] ..date1 strName[1]...date2
+    strName = strName + "2"
+    eDateStr1 = strName[0]
+    eDateStr2 = strName[1]
+
+
+    screenerLimit = 200
+    hyperList = []
+    screener = False
+    # Dictionary  name |LH |RH and value
+    metrics = {'RSI (14)RH': 70, 'P/ERH': 28, 'Debt/EqRH': 2, 'Debt/EqLH': 0, 'Gross MarginRH': 100,
+               'Gross MarginLH': 15,
+               'Quick RatioLH': 1.0, 'Quick RatioRH': 100}
+    # strName = str(metrics)
+    hyperList = ['F']
+    lstSelection = []
+    blnChangeUp = False
+    getWinner = True
+    Epochs = 1
+    skipLSTMModel = False
+    getVolatiles = True
+    limitElements = 4
+    z = 0
+    print("Entering Main1Makit")
+
+    if screener == True:
+        fViz = FinVizScreener2(screenerLimit, metrics)
+        print("-------------------------")
+        print(fViz)
+
+        data = scrape_finviz(fViz)
+        hyperList = []
+        print(data)
+
+        if hyperList.count == 0: print("FAIL!");exit(0)
+        for idx in range(0, len(data)):
+            hyperList.append(data.iloc[idx]['Ticker'])
+            if 'Volatility' in data:
+                print(data.iloc[idx]['Ticker'], data.iloc[idx]['Volatility'])
+            else:
+                print(data.iloc[idx]['Ticker'])
+        print(hyperList)
+
+    # Worked to here 4/17/2020
+    # Main routine
+    # ***************************************************************
+    if getVolatiles == True:
+        print("*** Running MainRoutine2 volatiles are True.**********************")
+        for lname in hyperList:
+            z = z + 1
+            if z < limitElements:
+                lstSelection = MainRoutine2(lname, 1, getWinner, Epochs, skipLSTMModel, lstSelection, blnChangeUp)
+
+    else:
+        for lname in hyperList:
+            z = z + 1
+            if z <= limitElements:
+                lstSelection = MainRoutine2(lname, 1, getWinner, Epochs, skipLSTMModel, lstSelection, blnChangeUp)
+            else:
+                break
+    # 4/17/2020 Made it to here
+    strResults = listToString(lstSelection)
+    print("1.) -----------------------------------------")
+    print("Final Predictions are:{}".format(lstSelection))
+
+    return strResults
+
+#print("Starting")
+#lstIt=['1/1/2020','2/2/2020']
+#effit=Main1Makeit2(lstIt)
+#exit(0)
+#elk=" "
+#elk=Main1Makeit("fubar")
+#print(elk)
+#exit(0)
+#This code isn't used
+screenerLimit = 150
+hyperList = []
+screener = False
+# Dictionary  name |LH |RH and value
+metrics = {'RSI (14)RH': 70, 'P/ERH': 28, 'Debt/EqRH': 2, 'Debt/EqLH': 0, 'Gross MarginRH': 100, 'Gross MarginLH': 15,
+           'Quick RatioLH': 1.0, 'Quick RatioRH': 100}
+#f=fileOpen("4")
+#print(f)
+#exit(0)
+if screener == True:
+    fViz = FinVizScreener2(screenerLimit, metrics)
+    print("-------------------------")
+    print(fViz)
+
+    data = scrape_finviz(fViz)
+    hyperList = []
+    print(data)
+
+    if hyperList.count == 0:print("FAIL!");exit(0)
+    for idx in range(0, len(data)):
+        hyperList.append(data.iloc[idx]['Ticker'])
+        if 'Volatility' in data:
+            print(data.iloc[idx]['Ticker'], data.iloc[idx]['Volatility'])
+        else:
+            print(data.iloc[idx]['Ticker'])
+    print(hyperList)
+else:
+    # hyperlist = ['TRNX']
+    # hyperList=['MU', 'CHRW', 'AMGN', 'JBHT', 'LNT', 'MDLZ', 'PEP', 'NDAQ']
+    # hyperList=['OXFCF']
+    # hyperList=['DSS','NAVI','NAV','OSN','TSG','TRNX','VKIN']
+    # https://www.marketinout.com/stock-screener/stocks.php?list=most_active_stocks&exch=otc
+    # hyperList = ['DMAN','SGMD','BRNE','IFAN','KATX','IALS','SWRM','LHSIF','ARST','NVGT']
+    # Prediction = ['-->Stock EOD/MCEP will go up by [0.03684919]', '-->Stock EOD/CHK will go up by [0.11212832]', '-->Stock EOD/KIQ will go up by [0.02581108]']
+
+    # hyperList = ['MSFT']
+    hyperList = ['BDR', 'CHKR', 'SXTC', 'PER']
